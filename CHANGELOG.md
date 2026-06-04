@@ -2,6 +2,34 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) y versionado semántico ([SemVer](https://semver.org/spec/v2.0.0.html)).
 
+## [0.4.2] - 2026-06-03
+
+### Fixed — diagnóstico raíz del "spinner infinito al hacer login"
+
+- **`app.deploy({ upsert: true })`** — opt nueva que hace deploy idempotente preservando el `applicationId` entre redeploys. Es la solución arquitectónica al bug más insidioso del SDK previo.
+
+### Root cause del bug
+
+Tras login, el frontend de Lowcoder llamaba `GET /api/applications/{id}/view` con un appId que ya estaba en estado **RECYCLED** (no NORMAL). El backend respondía **HTTP 400 `code:5003 "Bad request"`** sin contexto, y el frontend hacía polling/retry indefinidamente — el usuario veía un spinner durante "varios minutos".
+
+¿Por qué el appId estaba RECYCLED? Porque cada redeploy de la app destino (vía `app.deploy()` simple o `replaceByName: true`) **generaba un applicationId nuevo**. La app referenciante (Portal de Login) seguía apuntando al ID viejo, ya reciclado.
+
+### Solución
+
+`upsert: true` busca una app NORMAL con el mismo `title` y la **actualiza** con `client.updateApp()` — preservando el `applicationId`. Si no existe, cae al flujo normal de creación. Resultado: los redirects en otras apps siguen siendo válidos para siempre.
+
+### Documentation
+
+- **SKILL.md §13** — "App duplicada" reescrita con el bug del spinner infinito y comparación clara de `upsert` vs `replaceByName` vs default.
+- **troubleshooting.md** nueva entrada extensa "Spinner azul infinito al cargar una app" con diagnóstico paso-a-paso vía devtools y código del patrón upsert para scripts que construyen DSL a mano.
+
+### Verified
+
+Tras aplicar `upsert: true` a las 4 apps del proyecto remesaBot + purga de 19 apps RECYCLED:
+- Login `admin@solverius.cloud` → redirige a Panel Admin en **6 segundos** (antes: spinner indefinido)
+- Tabla de clientes carga inmediatamente con tags de color
+- Todas las request GET `/view` retornan 200 (antes: una de ellas 400 que rompía todo)
+
 ## [0.4.1] - 2026-06-03
 
 ### Fixed — bugs adicionales descubiertos verificando E2E las apps reales

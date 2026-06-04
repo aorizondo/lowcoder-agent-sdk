@@ -157,6 +157,55 @@ const APP_ID_ADMIN = adminApp.applicationId;
 
 Orden de deploy importa: primero apps "destino", luego las que las referencian.
 
+### Spinner azul infinito al cargar una app (no termina nunca)
+
+**Causa más común:** un redirect (vía `window.top.location.href` o link) apunta a un `applicationId` que ya está RECYCLED o DELETED. El frontend de Lowcoder hace fetch a `/api/applications/{id}/view`, recibe **HTTP 400** (`code:5003 "Bad request"` con mensaje genérico), pero la UI no muestra el error — solo deja el spinner colgado mientras hace polling/retry de otras requests adyacentes.
+
+**Diagnóstico rápido:**
+1. Devtools → Network tab → buscar request `GET /api/applications/.../view` en rojo (400)
+2. Devtools → Console → ver "Failed to load resource: 400" con la URL del appId problemático
+3. Verifica el status del app:
+   ```typescript
+   const apps = await client.listApps(orgId);
+   const target = apps.find(a => a.applicationId === "<el-id-problematico>");
+   console.log(target?.applicationStatus); // si es "RECYCLED" o "DELETED" → este es el bug
+   ```
+
+**Causa raíz:** `app.deploy()` por defecto crea una app NUEVA cada vez (con un appId nuevo). Si otras apps tienen ese appId hardcoded en sus redirects, cada redeploy rompe los enlaces. Las apps "viejas" quedan RECYCLED pero los redirects siguen apuntándoles.
+
+**Fix correcto (SDK 0.4.2+):** usa `upsert: true` para preservar el `applicationId` entre redeploys:
+
+```typescript
+// ✅ Correcto — preserva appId. Si existe NORMAL con el mismo título, lo actualiza
+const result = await app.deploy(client, undefined, {
+  upsert: true,
+  publish: true,
+});
+
+// ❌ Anti-patrón — cada redeploy genera un appId nuevo
+const result = await app.deploy(client);
+
+// ❌ Casi tan malo — replaceByName recicla la app vieja (que tenía el ID conocido)
+//    y crea una nueva con un ID distinto. Los redirects siguen rotos.
+const result = await app.deploy(client, undefined, { replaceByName: true });
+```
+
+Para apps que NO usan `app.deploy()` (construyen el DSL a mano), implementa el patrón upsert:
+
+```typescript
+const existing = (await client.listApps(orgId)).find(
+  a => a.name === APP_NAME && a.applicationStatus === "NORMAL"
+);
+if (existing) {
+  await client.updateApp(existing.applicationId, dsl, { publish: true });
+} else {
+  const r = await client.createApp({ name: APP_NAME, orgId, applicationType: 1, editingApplicationDSL: dsl });
+  await client.publishApp(r.applicationInfoView.applicationId);
+}
+```
+
+**Por qué Lowcoder no muestra error:** el endpoint `/view` devuelve 400 con mensaje opaco "Bad request" (no "esta app está en papelera"). El frontend lo trata como error transitorio y reintenta. El usuario ve un spinner que parece tardar "minutos" pero en realidad es retry hasta timeout.
+
 ### Queries REST fallan con 401
 
 **Causa:** el `datasourceId` apunta a un datasource que no existe o no tienes permisos.

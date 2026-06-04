@@ -1237,9 +1237,36 @@ El SDK 0.4+ emite un `console.warn` si detecta `type: "submit" + onClick` sin `f
 **Causa:** comillas alrededor del binding o falta `::uuid` cast.
 **Fix:** `WHERE id = {{x}}::uuid` (sin comillas + cast). Detalles en §6.4.
 
-### ❌ App duplicada en cada `deploy()`
-**Causa:** `deploy()` siempre crea una nueva — no es idempotente por defecto.
-**Fix:** `app.deploy(client, orgId, { replaceByName: true, publish: true })`. Elimina apps anteriores con el mismo nombre antes de crear.
+### ❌ App duplicada en cada `deploy()` / Spinner infinito tras login
+**Causa:** `deploy()` por defecto crea una app NUEVA con nuevo `applicationId` cada vez. Si otras apps tienen ese ID hardcoded en redirects/links, cada redeploy genera apps "huérfanas" RECYCLED y los enlaces apuntan a IDs que ya no son NORMAL. El endpoint `/api/applications/{id}/view` retorna **HTTP 400** con mensaje opaco "Bad request", y el frontend Lowcoder se queda en spinner haciendo polling indefinido (parecen "minutos cargando").
+
+**Fix (SDK 0.4.2+) — UPSERT preserva el `applicationId`:**
+```typescript
+// ✅ Si existe app NORMAL con el mismo título → update preservando ID. Si no, create.
+const result = await app.deploy(client, undefined, {
+  upsert: true,
+  publish: true,
+});
+
+// ❌ Cada redeploy genera ID nuevo → rompe enlaces de otras apps
+const result = await app.deploy(client);
+
+// ❌ Casi tan malo: replaceByName recicla el ID conocido y crea otro distinto
+const result = await app.deploy(client, undefined, { replaceByName: true });
+```
+
+Para apps que construyen el DSL a mano (sin `app.deploy()`):
+```typescript
+const existing = (await client.listApps(orgId)).find(
+  a => a.name === APP_NAME && a.applicationStatus === "NORMAL"
+);
+if (existing) {
+  await client.updateApp(existing.applicationId, dsl, { publish: true });
+} else {
+  const r = await client.createApp({ name: APP_NAME, orgId, applicationType: 1, editingApplicationDSL: dsl });
+  await client.publishApp(r.applicationInfoView.applicationId);
+}
+```
 
 ### ❌ Apps que se referencian (redirects, links) rompen tras redeploy
 **Causa:** IDs hardcoded `/apps/abc123/view` cambian cuando recreas la app destino.

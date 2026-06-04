@@ -1,6 +1,6 @@
 {
   "name": "@aorizondo/lowcoder-agent-sdk-core",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "SDK TypeScript para crear aplicaciones Lowcoder desde código. Convierte llamadas fluent en el JSON DSL correcto que Lowcoder acepta, sin que el usuario tenga que conocer la estructura interna.",
   "type": "module",
   "main": "dist/index.js",

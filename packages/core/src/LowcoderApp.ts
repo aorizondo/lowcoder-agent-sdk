@@ -343,10 +343,41 @@ export class LowcoderApp {
       publish?: boolean;
       replaceByName?: boolean;
       publicToAll?: boolean;
+      /**
+       * Deploy idempotente: si existe una app NORMAL con el mismo `title`,
+       * la **actualiza** preservando su `applicationId`. Si no existe, la crea.
+       *
+       * **Esto es MUY IMPORTANTE** cuando otras apps referencian este appId en
+       * redirects/links — sin esto, cada redeploy genera un nuevo ID y rompe
+       * los enlaces de las demás apps. Si lo combinas con `replaceByName: true`
+       * antes, las versiones antiguas RECYCLED se purgan primero.
+       *
+       * Toma precedencia sobre `replaceByName` cuando hay un match NORMAL.
+       */
+      upsert?: boolean;
     }
   ): Promise<ApplicationView> {
     const dsl = this.build();
     const resolvedOrgId = orgId ?? (await client.getCurrentOrgId());
+
+    // Upsert: busca una app NORMAL existente con el mismo title y actualízala.
+    if (opts?.upsert) {
+      const allApps = await client.listApps(resolvedOrgId);
+      const existing = allApps.find(
+        (a: any) => a.name === this.title && a.applicationStatus === "NORMAL"
+      );
+      if (existing) {
+        const appId = (existing as any).applicationId;
+        await client.updateApp(appId, dsl, { publish: opts.publish });
+        if (opts?.publicToAll) {
+          await client.setAppPublicToAll(appId, true);
+        }
+        // Re-fetch para devolver el view completo, consistente con createApp.
+        return client.getApp(appId);
+      }
+      // No existe NORMAL — cae al flujo de creación.
+    }
+
     if (opts?.replaceByName) {
       const allApps = await client.listApps(resolvedOrgId);
       for (const old of allApps.filter((a: any) => a.name === this.title)) {
