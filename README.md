@@ -5,6 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![npm version](https://img.shields.io/npm/v/@aorizondo/lowcoder-agent-sdk-core.svg)](https://www.npmjs.com/package/@aorizondo/lowcoder-agent-sdk-core)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org/)
+[![SafeSkill 93/100](https://img.shields.io/badge/SafeSkill-93%2F100_Verified%20Safe-brightgreen)](https://safeskill.dev/scan/aorizondo-lowcoder-agent-sdk)
 
 ## Por qué existe
 
